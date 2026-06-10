@@ -134,6 +134,14 @@ class Prota : MonoBehaviour
     private float tiempoUltimoLauncher = -999f;
     public float graciaSueloLauncher = 0.15f;
 
+    // ══════════════════════════════════════════════
+    // NUEVO: Control de suspensión aérea del jugador
+    // ══════════════════════════════════════════════
+    private bool suspendidoEnAire = false;
+    private float tiempoSuspension = 0f;
+    private float duracionSuspensionJugador = 1.2f;
+    private float gravityScaleOriginal = 1f;
+
     // Propiedad para no repetir sprite.flipX ? -1f : 1f en cada método
     private float direccionSprite => sprite.flipX ? -1f : 1f;
 
@@ -146,12 +154,31 @@ class Prota : MonoBehaviour
         energiaJugador = GetComponent<EnergiaJugador>();
         impulso = GetComponent<CinemachineImpulseSource>();
         habilidades = GetComponent<HabilidadesJugador>();
+
+        gravityScaleOriginal = rb.gravityScale;
     }
 
     void Update()
     {
+        // ══════════════════════════════════════════════
+        // NUEVO: Gestionar suspensión aérea del jugador
+        // ══════════════════════════════════════════════
+        if (suspendidoEnAire)
+        {
+            tiempoSuspension += Time.deltaTime;
+            rb.linearVelocity = Vector2.zero; // Mantener flotando
+            rb.gravityScale = 0f;
+
+            // Si se acabó el tiempo de suspensión, volver a caer
+            if (tiempoSuspension >= duracionSuspensionJugador)
+            {
+                suspendidoEnAire = false;
+                rb.gravityScale = gravityScaleOriginal; // Restaurar gravedad normal
+            }
+        }
+
         // No leer input de movimiento mientras se hace dash, parry o ráfaga
-        if (!haciendoDash && !haciendoParry && !haciendoRafaga)
+        if (!haciendoDash && !haciendoParry && !haciendoRafaga && !suspendidoEnAire)
             movimiento = Input.GetAxisRaw("Horizontal");
 
         enSuelo = Physics2D.OverlapCircle(puntoSuelo.position, radioSuelo, capaSuelo);
@@ -165,6 +192,7 @@ class Prota : MonoBehaviour
         {
             comboAereoPaso = 0;
             martilloActivo = false;
+            suspendidoEnAire = false; // Descongelar si tocas suelo
         }
 
         if (haciendoArea && efectivamenteEnSuelo)
@@ -327,6 +355,10 @@ class Prota : MonoBehaviour
             return;
         }
 
+        // No aplicar movimiento si está suspendido en el aire
+        if (suspendidoEnAire)
+            return;
+
         float velocidadActual = corriendo ? velocidadCorrer : velocidad;
         rb.linearVelocity = new Vector2(movimiento * velocidadActual, rb.linearVelocity.y);
     }
@@ -450,17 +482,21 @@ class Prota : MonoBehaviour
 
         rb.linearVelocity = new Vector2(rb.linearVelocity.x, 22f);
 
-        // NUEVO: Congelar al jugador en el aire
+        // NUEVO: Congelar al jugador en el aire después de 0.3 segundos
         Invoke(nameof(CongelarEnAireJugador), 0.3f);
 
         anim.SetTrigger("launcher");
     }
 
-    // NUEVO: Método para congelar al jugador sin gravedad
+    // NUEVO: Método para congelar al jugador sin gravedad (ahora con descongelación automática)
     void CongelarEnAireJugador()
     {
-        rb.gravityScale = 0f;
-        rb.linearVelocity = new Vector2(0, 0);
+        if (launcherActivo || !enSuelo) // Solo si el launcher está activo o está realmente en el aire
+        {
+            suspendidoEnAire = true;
+            tiempoSuspension = 0f;
+            duracionSuspensionJugador = 1.2f; // Tiempo que flota
+        }
     }
 
     // Llamar desde Animation Event al ÚLTIMO FRAME de la animación del Launcher.
